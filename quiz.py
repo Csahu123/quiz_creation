@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, request,render_template
+from flask import Flask, request, jsonify, request,render_template,redirect
 from flask_pymongo import PyMongo
 from bson import ObjectId
 from bson import json_util
@@ -16,6 +16,12 @@ mongo_q = PyMongo(app)
 
 app.config["MONGO_URI"] = "mongodb://localhost:27017/Students"
 mongo_s = PyMongo(app)
+
+app.config['MONGO_URI'] = 'mongodb://localhost:27017/Parents'
+mongo_p = PyMongo(app)
+
+app.config['MONGO_URI'] = 'mongodb://localhost:27017/Teachers'
+mongo_t = PyMongo(app)
 
 
 # API's supporter functions
@@ -344,6 +350,193 @@ def delete_quizz(quiz_id, creator_id):
     except Exception as e:
         return jsonify({"message": "An error occurred.", "error": str(e)}), 500
 
+
+# setting status of quiz after click by user on quiz 
+@app.route('/setting_status/<string:quiz_id>/<string:student_id>', methods = ['PUT'])
+def setting_status_of_quizz(quiz_id, student_id):
+
+    new_quiz = {
+        "quiz_id": quiz_id,
+        "status": "seen"
+    }
+    # Define the update operation to add the new quiz to the quiz_data array
+    update = {
+        '$push': {
+            'quiz_data': {
+                '$each': [new_quiz],
+            }
+        }
+    }
+
+    mongo_s.db.student_profile.update_one({'_id': student_id}, update)
+    return "Quizz seen",200
+
+
+#adding quizz in student profile
+@app.route('/update_student_quiz_data/<string:quiz_id>/<string:student_id>/<string:result>/<string:click>', methods=['PUT'])
+def update_student_quiz_data(quiz_id, student_id, result, click):
+    try:
+        student = mongo_s.db.student_profile.find_one({"_id": student_id})
+        
+        if student:
+            # Check if the quiz_id already exists in quiz_data
+            quiz_entry = next((entry for entry in student['quiz_data'] if entry.get('quiz_id') == quiz_id), None)
+
+            if quiz_entry:
+                quiz = mongo_q.db.quizes.find_one({"_id": quiz_id})
+                # Update the existing quiz entry
+                quiz_entry['subject'] = quiz.get('subject', '')
+                quiz_entry['topic'] = quiz.get('topic', '')
+                quiz_entry['class'] = quiz.get('class', '')
+                quiz_entry['subtopic'] = quiz.get('subtopic', '')
+                quiz_entry['language'] = quiz.get('language', '')            
+                quiz_entry['result'] = result
+                quiz_entry['clicked_on'] = click
+
+                # Update the student's document with the modified quiz_data
+                mongo_s.db.student_profile.update_one({"_id": student_id}, {"$set": student})
+
+                return jsonify({"message": "Student quiz data updated successfully."}), 200
+            else:
+                return jsonify({"error": "Quiz not found in student data."}), 400
+        else:
+            return jsonify({"error": "Student not found."}), 400
+
+    except Exception as e:
+        return jsonify({"error": "An error occurred.", "error": str(e)}), 500
+
+
+# getting accuracy of student
+@app.route('/getting_accuracy/<string:student_id>', methods=['GET'])
+def getting_accuracy(student_id):
+    try:
+        student = mongo_s.db.student_profile.find_one({"_id": student_id})
+        result = []
+        for res in student.get("quiz_data", []):
+            try:
+                result.append(res['result'])
+            except KeyError:
+                # Key 'result' not found in this quiz data, continue to the next iteration
+                continue
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": "An error occurred.", "error": str(e)}), 500
+
+
+# invite section 
+def search_student(search_value):
+    student = mongo_s.db.student_profile.find_one({'user_id': search_value})
+    if not student:
+        student = mongo_s.db.student_profile.find_one({'personal_info.contact.email': search_value})
+    if not student:
+        student = mongo_s.db.student_profile.find_one({'personal_info.contact.phone': search_value})
+    if student:
+        student['_id'] = str(student['_id'])  # Convert ObjectId to string
+        data = {
+            "_id": student['_id'],
+            "role": student['role'],
+            "user_id": student['user_id'],
+            "username": student['username'],
+            "user_image": student['user_image'],
+        }
+        return data
+    return student
+
+#serch parent by their unique identity
+def search_parent(search_value):
+    parent = mongo_p.db.parent_profile.find_one({'parent_useridname': search_value})
+    if not parent:
+        parent = mongo_p.db.parent_profile.find_one({'personal_info.contact.parent_email': search_value})
+    if not parent:
+        parent = mongo_p.db.parent_profile.find_one({'personal_info.contact.parent_phone': search_value})
+    if parent:
+        parent['_id'] = str(parent['_id'])
+        data = {
+            "_id": parent['_id'],
+            "role": parent['role'],
+            "user_id": parent['parent_useridname'],
+            "username": parent['parent_name'],
+            "user_image": parent['parent_image']
+        }
+        return data
+    return parent
+
+def search_teacher(search_value):
+    teacher = mongo_t.db.teacher_profile.find_one({'profile.useridname_password.userid_name': search_value})
+    if not teacher:
+        teacher = mongo_t.db.teacher_profile.find_one({'profile.contact.email': search_value})
+    if not teacher:
+        teacher = mongo_t.db.teacher_profile.find_one({'profile.contact.phone': search_value})
+    if teacher:
+        teacher['_id'] = str(teacher['_id']) 
+        data = {
+            "_id": teacher['_id'],
+            "role": teacher['role'],
+            "user_id": teacher['profile']['useridname_password']['userid_name'],
+            "username": teacher['username'],
+            "user_image": teacher['user_image'],
+        }
+        return data
+    return teacher
+
+# Define a route to invite friends and send quiz invitations
+@app.route('/invite_friends', methods=['POST'])
+def invite_friends_and_send_invitations():
+    user_id = request.form.get('user_id')  # user_id of sender who send invite
+    student_sending = search_student(user_id)
+    parent_sending = search_parent(user_id)
+    teacher_sending = search_teacher(user_id)
+    # Check if the sender is a present in student profile
+    if student_sending:
+        sender = mongo_s.db.student_profile.find_one({"_id": user_id})
+    elif parent_sending:
+        sender = mongo_s.db.parent_profile.find_one({"_id": user_id})
+    elif teacher_sending:
+        sender = mongo_s.db.teacher_profile.find_one({"_id": user_id})
+    else:
+        return jsonify({"message": "Sender is not a present in the database."}), 403
+
+    friends = mongo_s.db.student_profile.find({"user_id": user_id, "friends": friends})
+    selected_users = request.form.getlist('selected_users')
+    invited_user_id = request.form.get("invited_user_id", '')
+    # Search for the user by user_id in all three roles: student, parent, and teacher
+    student_profile = search_student(invited_user_id)
+    parent_profile = search_parent(invited_user_id)
+    teacher_profile = search_teacher(invited_user_id)
+
+    # Determine the role of the invited user
+    if student_profile:
+        role = "student"
+        selected_users.append(student_profile)
+    elif parent_profile:
+        role = "parent"
+        selected_users.append(parent_profile)
+    elif teacher_profile:
+        role = "teacher"
+        selected_users.append(teacher_profile)
+    else:
+        jsonify({"message": "User not found"}), 404
+
+
+    response_data = {
+        "selected_users": selected_users
+    }
+
+    return jsonify(response_data), 200
+
+@app.route('/send_invitation/<list:selected_users>', methods=['POST'])
+def invite_friend(selected_users):
+    # Get the user ID entered by the user   
+    for user in selected_users:
+        # Check if the invited user has the app installed (you may need to add this information to your user profiles)
+        app_installed = user.get("app_installed", False)
+
+        if app_installed:
+            # Redirect to the quiz page
+            return redirect("/quiz_page")
+        else:
+            # Redirect to the Play Store for app download
+            return redirect("https://play.google.com/store/apps/details?id=your_app_package_name")
 
 
 if __name__ == '__main__':

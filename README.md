@@ -141,6 +141,56 @@ The base URL for all API endpoints is `http://localhost:5000/`.
 -  **Response:**
   - Status Code: 200 OK
   - Content: JSON array containing subtopics associated with the selected subject and topic.
+
+1. Set Quiz Status for a User
+URL: /setting_status/<string:quiz_id>/<string:student_id>
+Method: PUT
+Description: Set the status of a quiz after a user clicks on it.
+Parameters:
+quiz_id (string): The ID of the quiz.
+student_id (string): The ID of the student.
+Response:
+Status Code: 200 OK
+Content: "Quiz seen"
+2. Update Student Quiz Data
+URL: /update_student_quiz_data/<string:quiz_id>/<string:student_id>/<string:result>/<string:click>
+Method: PUT
+Description: Update quiz data for a student, including the quiz result and click status.
+Parameters:
+quiz_id (string): The ID of the quiz.
+student_id (string): The ID of the student.
+result (string): The result of the quiz (e.g., "YES" or "NO").
+click (string): The click status (e.g., "1" or "2").
+Response:
+Status Code: 200 OK
+Content: JSON object with a success message.
+3. Get Student Accuracy
+URL: /getting_accuracy/<string:student_id>
+Method: GET
+Description: Get the accuracy data for a student based on quiz results.
+Parameters:
+student_id (string): The ID of the student.
+Response:
+Status Code: 200 OK
+Content: JSON array containing quiz results.
+4. Invite Friends and Send Quiz Invitations
+URL: /invite_friends
+Method: POST
+Description: Invite friends and send quiz invitations to selected users.
+Request Body:
+user_id (string): The ID of the sender.
+selected_users (list of objects): A list of selected user profiles to invite.
+Response:
+Status Code: 200 OK
+Content: JSON object with selected user data.
+5. Send Quiz Invitation
+URL: /send_invitation/<list:selected_users>
+Method: POST
+Description: Send quiz invitations to selected users.
+Request Body:
+selected_users (list): A list of selected user profiles to send invitations to.
+Response:
+Redirect: To the quiz page or Play Store for app download.
     
 ## Error Handling
 
